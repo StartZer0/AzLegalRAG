@@ -93,10 +93,6 @@ def unload_llm():
     clear_gpu_memory()
 
 
-# Azerbaijani special characters that often get split to separate lines
-AZ_SPECIAL_CHARS = set('əüöşçğıƏÜÖŞÇĞI')
-
-
 def normalize_text(text):
     """Fix split Azerbaijani characters from bad PDF extraction."""
     if not text:
@@ -105,33 +101,20 @@ def normalize_text(text):
     import re
     
     text = unicodedata.normalize('NFC', text)
-    lines = text.split('\n')
-    result = []
     
-    for line in lines:
-        stripped = line.strip()
-        
-        if not stripped:
-            if result and result[-1] != '':
-                result.append('')
-            continue
-        
-        is_only_special = all(c in AZ_SPECIAL_CHARS for c in stripped)
-        is_very_short = len(stripped) <= 2
-        
-        if (is_only_special or is_very_short) and result:
-            for i in range(len(result) - 1, -1, -1):
-                if result[i]:
-                    result[i] += stripped
-                    break
-            else:
-                result.append(stripped)
-        else:
-            result.append(stripped)
+    # Azerbaijani alphabet (Latin + special chars)
+    az_chars = r'[a-zA-ZəüöşçğıƏÜÖŞÇĞI]'
     
-    fixed_text = '\n'.join(result)
-    fixed_text = re.sub(r'\n{3,}', '\n\n', fixed_text)
-    return fixed_text
+    # Aggressively join letters separated by newlines
+    for _ in range(10):
+        prev = text
+        text = re.sub(f'({az_chars})\\n({az_chars})', r'\1\2', text)
+        if text == prev:
+            break
+    
+    text = re.sub(r' {2,}', ' ', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
 
 
 def format_docs(docs):

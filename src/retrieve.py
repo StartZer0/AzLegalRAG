@@ -11,18 +11,13 @@ try:
 except ImportError:
     from config import TOP_K
 
-# Azerbaijani special characters that often get split to separate lines
-AZ_SPECIAL_CHARS = set('əüöşçğıƏÜÖŞÇĞI')
-
 
 def normalize_text(text):
     """
     Fix Azerbaijani text with split characters from bad PDF extraction.
     
-    The source dataset has Azerbaijani special characters (ə, ü, ö, ş, ç, ğ, ı)
-    split onto separate lines. This function:
-    1. Joins lines that contain only special characters to the previous line
-    2. Applies Unicode NFC normalization
+    The source dataset has words broken across lines at special characters.
+    This function aggressively joins lines that appear to be mid-word breaks.
     """
     if not text:
         return ""
@@ -30,44 +25,33 @@ def normalize_text(text):
     # First: NFC normalization for combining characters
     text = unicodedata.normalize('NFC', text)
     
-    # Split into lines
-    lines = text.split('\n')
-    result = []
+    # Aggressive approach: Remove newlines that appear within words
+    # Pattern: letter/special-char, newline, letter/special-char (no space/punct between)
+    # This indicates a mid-word break that should be removed
     
-    for line in lines:
-        stripped = line.strip()
-        
-        if not stripped:
-            # Keep empty lines for paragraph structure
-            if result and result[-1] != '':
-                result.append('')
-            continue
-        
-        # Check if this line contains only Azerbaijani special characters
-        # These should be joined to the previous line
-        is_only_special = all(c in AZ_SPECIAL_CHARS for c in stripped)
-        
-        # Also check for very short lines (1-2 chars) that are likely split
-        is_very_short = len(stripped) <= 2
-        
-        if (is_only_special or is_very_short) and result:
-            # Join to previous non-empty line
-            for i in range(len(result) - 1, -1, -1):
-                if result[i]:
-                    result[i] += stripped
-                    break
-            else:
-                result.append(stripped)
-        else:
-            result.append(stripped)
+    # Azerbaijani alphabet (Latin + special chars)
+    az_chars = r'[a-zA-ZəüöşçğıƏÜÖŞÇĞI]'
     
-    # Join with newlines
-    fixed_text = '\n'.join(result)
+    # Replace newlines between word characters with nothing (join them)
+    # But preserve newlines that have punctuation/spaces around them
     
-    # Clean up multiple consecutive newlines
-    fixed_text = re.sub(r'\n{3,}', '\n\n', fixed_text)
+    # Step 1: Replace single newline between letters with nothing
+    text = re.sub(f'({az_chars})\\n({az_chars})', r'\1\2', text)
     
-    return fixed_text
+    # Step 2: Repeat to catch chained single-char lines
+    for _ in range(10):  # Multiple passes to handle chains
+        prev = text
+        text = re.sub(f'({az_chars})\\n({az_chars})', r'\1\2', text)
+        if text == prev:
+            break
+    
+    # Step 3: Clean up multiple spaces
+    text = re.sub(r' {2,}', ' ', text)
+    
+    # Step 4: Clean up multiple consecutive newlines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    
+    return text.strip()
 
 
 def semantic_search(vectorstore, query, k=None):
