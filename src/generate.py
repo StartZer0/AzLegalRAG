@@ -94,11 +94,14 @@ def unload_llm():
 
 
 def format_docs(docs):
-    """Format retrieved documents as context string."""
+    """Format retrieved documents as context string with normalized text."""
+    import unicodedata
     context_parts = []
     for i, doc in enumerate(docs, 1):
         source = doc.metadata.get("source", "Unknown")
-        context_parts.append(f"[{i}] Source: {source}\n{doc.page_content}")
+        # Normalize Azerbaijani text (NFC form)
+        content = unicodedata.normalize('NFC', doc.page_content)
+        context_parts.append(f"[{i}] Source: {source}\n{content}")
     return "\n\n".join(context_parts)
 
 
