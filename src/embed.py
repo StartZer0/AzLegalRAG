@@ -90,9 +90,9 @@ class GteQwen2Embeddings(Embeddings):
             return_tensors="pt"
         ).to(self.device)
         
-        # Get embeddings
+        # Get embeddings (use_cache=False to avoid DynamicCache compatibility issues)
         with torch.no_grad():
-            outputs = self.model(**inputs)
+            outputs = self.model(**inputs, use_cache=False)
             # Use last token pooling (recommended for GTE-Qwen2)
             embeddings = outputs.last_hidden_state[:, -1, :]
             # L2 normalize

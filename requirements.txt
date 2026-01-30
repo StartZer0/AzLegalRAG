@@ -2,7 +2,7 @@
 
 # Core ML
 torch
-transformers>=4.36.0
+transformers==4.47.0  # Pin for DynamicCache compatibility with gte-Qwen2-7B
 accelerate
 sentence-transformers
 
