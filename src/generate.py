@@ -1,22 +1,22 @@
 """
 LLM generation module for AzLegalRAG.
 Uses Mistral-7B-Instruct via HuggingFace transformers.
-Implements sequential loading - loads after embedding model is unloaded.
 """
 
 import gc
 import torch
-from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
-from langchain_community.llms import HuggingFacePipeline
-from langchain.chains.retrieval_qa.base import RetrievalQA
+from transformers import pipeline
+from langchain_huggingface import HuggingFacePipeline
 from langchain_core.prompts import PromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
 
 try:
     from .config import LLM_MODEL, TOP_K
-    from .embed import clear_gpu_memory, unload_embeddings
+    from .embed import clear_gpu_memory
 except ImportError:
     from config import LLM_MODEL, TOP_K
-    from embed import clear_gpu_memory, unload_embeddings
+    from embed import clear_gpu_memory
 
 
 # Azerbaijani legal assistant prompt
@@ -41,14 +41,6 @@ def get_llm(model_name=None, max_new_tokens=512, force_reload=False):
     """
     Initialize Mistral-7B-Instruct LLM.
     Uses singleton pattern to avoid reloading.
-    
-    Args:
-        model_name: HuggingFace model ID
-        max_new_tokens: Maximum tokens to generate
-        force_reload: Force reload even if already loaded
-    
-    Returns:
-        LangChain-compatible LLM
     """
     global _llm_instance, _llm_pipeline
     
@@ -101,54 +93,69 @@ def unload_llm():
     clear_gpu_memory()
 
 
-def create_rag_chain(vectorstore, llm=None, prompt_template=None):
+def format_docs(docs):
+    """Format retrieved documents as context string."""
+    context_parts = []
+    for i, doc in enumerate(docs, 1):
+        source = doc.metadata.get("source", "Unknown")
+        context_parts.append(f"[{i}] Source: {source}\n{doc.page_content}")
+    return "\n\n".join(context_parts)
+
+
+def create_rag_chain(vectorstore, llm=None):
     """
-    Create RAG chain with retrieval and generation.
+    Create RAG chain with retrieval and generation using LCEL.
     
     Args:
         vectorstore: Chroma vectorstore instance
         llm: LangChain LLM (will be created if None)
-        prompt_template: Custom prompt template
     
     Returns:
-        RetrievalQA chain
+        RAG chain
     """
     if llm is None:
         llm = get_llm()
     
-    template = prompt_template or PROMPT_TEMPLATE
-    prompt = PromptTemplate(
-        template=template,
-        input_variables=["context", "question"]
+    retriever = vectorstore.as_retriever(
+        search_type="mmr",
+        search_kwargs={"k": TOP_K, "fetch_k": TOP_K * 3}
     )
     
-    chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=vectorstore.as_retriever(
-            search_type="mmr",
-            search_kwargs={"k": TOP_K, "fetch_k": TOP_K * 3}
-        ),
-        chain_type_kwargs={"prompt": prompt},
-        return_source_documents=True
+    prompt = PromptTemplate.from_template(PROMPT_TEMPLATE)
+    
+    # LCEL chain (LangChain Expression Language)
+    chain = (
+        {"context": retriever | format_docs, "question": RunnablePassthrough()}
+        | prompt
+        | llm
+        | StrOutputParser()
     )
     
-    return chain
+    return chain, retriever
 
 
-def ask_question(chain, question):
+def ask_question(chain, retriever, question):
     """
     Ask a question using the RAG chain.
     
     Args:
-        chain: RetrievalQA chain
+        chain: RAG chain
+        retriever: Document retriever
         question: User question string
     
     Returns:
         Dict with 'result' and 'source_documents'
     """
-    result = chain({"query": question})
-    return result
+    # Get answer
+    result = chain.invoke(question)
+    
+    # Get source documents
+    source_docs = retriever.invoke(question)
+    
+    return {
+        "result": result,
+        "source_documents": source_docs
+    }
 
 
 if __name__ == "__main__":
