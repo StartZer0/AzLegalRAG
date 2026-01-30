@@ -4,8 +4,8 @@ Loads and chunks Azerbaijani legal documents from e-qanun corpus.
 """
 
 from datasets import load_dataset
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.schema import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
 
 try:
     from .config import CHUNK_SIZE, CHUNK_OVERLAP, DATASET_NAME
