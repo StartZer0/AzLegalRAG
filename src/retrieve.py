@@ -4,26 +4,70 @@ Implements semantic search and hybrid search strategies.
 """
 
 import unicodedata
+import re
 
 try:
     from .config import TOP_K
 except ImportError:
     from config import TOP_K
 
+# Azerbaijani special characters that often get split to separate lines
+AZ_SPECIAL_CHARS = set('əüöşçğıƏÜÖŞÇĞI')
+
 
 def normalize_text(text):
     """
-    Normalize Azerbaijani text to fix decomposed Unicode characters.
-    Converts NFD (decomposed) to NFC (composed) form.
-    e.g., 'müqavilə' stored as separate chars becomes proper 'müqavilə'
+    Fix Azerbaijani text with split characters from bad PDF extraction.
+    
+    The source dataset has Azerbaijani special characters (ə, ü, ö, ş, ç, ğ, ı)
+    split onto separate lines. This function:
+    1. Joins lines that contain only special characters to the previous line
+    2. Applies Unicode NFC normalization
     """
-    if text is None:
+    if not text:
         return ""
-    # NFC normalization: combines base characters with combining marks
-    normalized = unicodedata.normalize('NFC', text)
-    # Also remove any remaining zero-width characters
-    normalized = ''.join(c for c in normalized if unicodedata.category(c) != 'Mn' or unicodedata.combining(c) == 0)
-    return normalized
+    
+    # First: NFC normalization for combining characters
+    text = unicodedata.normalize('NFC', text)
+    
+    # Split into lines
+    lines = text.split('\n')
+    result = []
+    
+    for line in lines:
+        stripped = line.strip()
+        
+        if not stripped:
+            # Keep empty lines for paragraph structure
+            if result and result[-1] != '':
+                result.append('')
+            continue
+        
+        # Check if this line contains only Azerbaijani special characters
+        # These should be joined to the previous line
+        is_only_special = all(c in AZ_SPECIAL_CHARS for c in stripped)
+        
+        # Also check for very short lines (1-2 chars) that are likely split
+        is_very_short = len(stripped) <= 2
+        
+        if (is_only_special or is_very_short) and result:
+            # Join to previous non-empty line
+            for i in range(len(result) - 1, -1, -1):
+                if result[i]:
+                    result[i] += stripped
+                    break
+            else:
+                result.append(stripped)
+        else:
+            result.append(stripped)
+    
+    # Join with newlines
+    fixed_text = '\n'.join(result)
+    
+    # Clean up multiple consecutive newlines
+    fixed_text = re.sub(r'\n{3,}', '\n\n', fixed_text)
+    
+    return fixed_text
 
 
 def semantic_search(vectorstore, query, k=None):
@@ -105,10 +149,39 @@ def format_context(documents):
 
 
 if __name__ == "__main__":
-    from embed import load_vectorstore
+    # Test the normalize function
+    test_text = """Kollektiv m
+ü
+qavil
+ə
+v
+ə
+sazi
+ş
+bir ild
+ə
+n
+üç
+il
+ə
+d
+ə
+k m
+ü
+dd
+ə
+t
+ə
+ba
+ğ
+lan
+ı
+la bil
+ə
+r."""
     
-    vs = load_vectorstore()
-    results = semantic_search(vs, "Emek muqavilesi")
-    print(f"Found {len(results)} results")
-    for doc in results:
-        print(f"- {doc.metadata['source']}: {doc.page_content[:100]}...")
+    print("=== ORIGINAL ===")
+    print(test_text[:100])
+    print()
+    print("=== NORMALIZED ===")
+    print(normalize_text(test_text))
