@@ -17,7 +17,7 @@ This project demonstrates RAG implementation for legal document retrieval and qu
 
 | Component | Tool |
 |-----------|------|
-| Embedding | Alibaba-NLP/gte-Qwen2-7B-instruct (77.18% NDCG) |
+| Embedding | BAAI/bge-m3 (65.8% NDCG) |
 | Vector DB | ChromaDB |
 | LLM | Mistral-7B-Instruct-v0.2 |
 | Framework | LangChain |

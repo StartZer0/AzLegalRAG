@@ -2,7 +2,7 @@
 
 # Core ML
 torch
-transformers==4.47.0  # Pin for DynamicCache compatibility with gte-Qwen2-7B
+transformers>=4.36.0
 accelerate
 sentence-transformers
 
@@ -11,6 +11,7 @@ langchain>=0.3.0
 langchain-community>=0.3.0
 langchain-core>=0.3.0
 langchain-text-splitters>=0.3.0
+langchain-huggingface>=0.1.0
 
 # Vector store
 chromadb>=0.4.0
@@ -24,3 +25,4 @@ streamlit>=1.30.0
 
 # Utilities
 tqdm
+huggingface_hub

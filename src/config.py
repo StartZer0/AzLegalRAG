@@ -1,8 +1,8 @@
 # Configuration constants for AzLegalRAG
 
 # Models
-EMBEDDING_MODEL = "Alibaba-NLP/gte-Qwen2-7B-instruct"
-EMBEDDING_DIM = 3584  # gte-Qwen2-7B dimension
+EMBEDDING_MODEL = "BAAI/bge-m3"
+EMBEDDING_DIM = 1024  # bge-m3 dimension
 LLM_MODEL = "mistralai/Mistral-7B-Instruct-v0.2"
 
 # Chunking parameters
