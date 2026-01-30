@@ -1,55 +1,61 @@
 """
 LLM generation module for AzLegalRAG.
 Uses Mistral-7B-Instruct via HuggingFace transformers.
+Implements sequential loading - loads after embedding model is unloaded.
 """
 
+import gc
 import torch
-from transformers import pipeline, AutoTokenizer
+from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
 from langchain_community.llms import HuggingFacePipeline
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 
 try:
     from .config import LLM_MODEL, TOP_K
+    from .embed import clear_gpu_memory, unload_embeddings
 except ImportError:
     from config import LLM_MODEL, TOP_K
+    from embed import clear_gpu_memory, unload_embeddings
 
 
 # Azerbaijani legal assistant prompt
-PROMPT_TEMPLATE = """Siz Azerbaycan huquq meseleleri uzre komekcisisiniz. 
-Suala yalniz verilmis kontekst esasinda cavab verin.
-Menbeleri e-qanun.az linki ile gosterin.
-
-Kontekst:
-{context}
-
-Sual: {question}
-
-Azerbaycan dilinde cavab:"""
-
-PROMPT_TEMPLATE_EN = """You are an Azerbaijani legal assistant.
+PROMPT_TEMPLATE = """You are an Azerbaijani legal assistant.
 Answer the question based ONLY on the provided context.
 Always cite sources with their e-qanun.az links.
+If you don't know the answer, say so.
 
 Context:
 {context}
 
 Question: {question}
 
-Answer (in Azerbaijani or the language of the question):"""
+Answer (respond in the same language as the question):"""
 
 
-def get_llm(model_name=None, max_new_tokens=512):
+_llm_instance = None
+_llm_pipeline = None
+
+
+def get_llm(model_name=None, max_new_tokens=512, force_reload=False):
     """
     Initialize Mistral-7B-Instruct LLM.
+    Uses singleton pattern to avoid reloading.
     
     Args:
         model_name: HuggingFace model ID
         max_new_tokens: Maximum tokens to generate
+        force_reload: Force reload even if already loaded
     
     Returns:
         LangChain-compatible LLM
     """
+    global _llm_instance, _llm_pipeline
+    
+    if _llm_instance is not None and not force_reload:
+        print("Using cached LLM instance")
+        return _llm_instance
+    
     model_name = model_name or LLM_MODEL
     
     print(f"Loading LLM: {model_name}")
@@ -57,9 +63,10 @@ def get_llm(model_name=None, max_new_tokens=512):
     
     if torch.cuda.is_available():
         print(f"GPU: {torch.cuda.get_device_name(0)}")
-        print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+        mem_free = torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated(0)
+        print(f"GPU Memory Free: {mem_free / 1e9:.1f} GB")
     
-    pipe = pipeline(
+    _llm_pipeline = pipeline(
         "text-generation",
         model=model_name,
         torch_dtype=torch.float16,
@@ -71,7 +78,27 @@ def get_llm(model_name=None, max_new_tokens=512):
         repetition_penalty=1.15
     )
     
-    return HuggingFacePipeline(pipeline=pipe)
+    _llm_instance = HuggingFacePipeline(pipeline=_llm_pipeline)
+    print("LLM loaded successfully!")
+    
+    return _llm_instance
+
+
+def unload_llm():
+    """Unload LLM to free GPU memory."""
+    global _llm_instance, _llm_pipeline
+    
+    print("Unloading LLM...")
+    
+    if _llm_pipeline is not None:
+        del _llm_pipeline
+        _llm_pipeline = None
+    
+    if _llm_instance is not None:
+        del _llm_instance
+        _llm_instance = None
+    
+    clear_gpu_memory()
 
 
 def create_rag_chain(vectorstore, llm=None, prompt_template=None):
@@ -89,7 +116,7 @@ def create_rag_chain(vectorstore, llm=None, prompt_template=None):
     if llm is None:
         llm = get_llm()
     
-    template = prompt_template or PROMPT_TEMPLATE_EN
+    template = prompt_template or PROMPT_TEMPLATE
     prompt = PromptTemplate(
         template=template,
         input_variables=["context", "question"]
@@ -128,3 +155,5 @@ if __name__ == "__main__":
     print("Testing LLM loading...")
     llm = get_llm()
     print("LLM loaded successfully!")
+    unload_llm()
+    print("LLM unloaded successfully!")
