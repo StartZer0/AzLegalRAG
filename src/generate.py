@@ -8,8 +8,8 @@ import gc
 import torch
 from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
 from langchain_community.llms import HuggingFacePipeline
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
+from langchain.chains.retrieval_qa.base import RetrievalQA
+from langchain_core.prompts import PromptTemplate
 
 try:
     from .config import LLM_MODEL, TOP_K
